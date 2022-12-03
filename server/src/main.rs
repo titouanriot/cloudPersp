@@ -82,7 +82,7 @@ fn open_connection() {
 
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:8082").unwrap();
     //println!("listening started, ready to accept");
 
     for stream in listener.incoming() {
