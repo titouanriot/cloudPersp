@@ -1,0 +1,31 @@
+// let output = Command::new("echo")
+// .arg("hello world")
+// .status()
+// .expect("failed to execute");
+
+// let list_dir = Command::new("ls")
+// // command arguments
+// .args(["-l", "-a", "-R", "-t"])
+// // directory we want to display the files
+// .current_dir("src/")
+// .status()
+// .expect("ls command failed to start");
+
+// let change_permissions = Command::new("chmod")
+// .args(["-R", "777", "test/"])
+// .status()
+// .expect("chmod command failed to start");
+
+ //base_command.output()
+    //.expect("failed to excute shell command");
+
+    //println!("{}", base_command);
+    //println!("{}", String::from_utf8_lossy(&base_command.stdout()));
+    //io::stdout().write_all(&base_command.stdout()).unwrap();
+
+
+https://docs.rs/reqwest/latest/reqwest/index.html
+https://blog.logrocket.com/making-http-requests-rust-reqwest/
+
+https://users.rust-lang.org/t/curl-post-tcpstream/38350/5
+

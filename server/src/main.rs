@@ -12,24 +12,55 @@ use std::{
 
 fn handle_connection(mut stream: TcpStream) {
     println!("Incoming connection from: {:?} \n", stream.peer_addr());
+
+
+
+    //////////TEEEEEEEESSSSSSSSTTTTTTTTTTTTTT
+    let mut buf_reader = BufReader::new(&mut stream);
+
+    let mut request_line = "".to_string();
+    buf_reader.read_line(&mut request_line);
+
+    let mut header_line = "".to_string();
+    loop {
+        buf_reader.read_line(&mut header_line);
+
+        // The final line is just /r/n
+        if header_line.len() == 2 {
+            break
+        }
+        header_line = "".to_string();
+    }
+
+    // This buffer would need to be whatever size Content-Length reports
+    let mut read_buf = [0u8; 27];
+    buf_reader.read_exact(&mut read_buf);
+
+    let body = String::from_utf8(read_buf.to_vec());
+    println!("BODY: {}", body.unwrap()); 
     
-    let buf_reader = BufReader::new(&mut stream);
-    let http_request: Vec<_> = buf_reader
-        .lines()
-        .map(|result| result.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
-        
-    println!("Request: {:#?} \n", http_request);
+ //////////TEEEEEEEESSSSSSSSTTTTTTTTTTTTTT
     
-    let status_line = "HTTP/1.1 200 OK\r\n\r\n";
-    let contents = fs::read_to_string("hello.html").unwrap();
-    let length = contents.len();
+    // let mut buf_reader = BufReader::new(&mut stream);
+
+
+    // let mut buf = [0u8; 32];
+    // let read = buf_reader.read(&mut buf);
+    // println!("Read : {:?}", read);
+
+    // let http_request: Vec<_> = buf_reader
+    //     .lines()
+    //     .map(|result| result.unwrap())
+    //     .take_while(|line| !line.is_empty())
+    //     .collect();
+    // println!("Request: {:#?} \n", http_request);
+    // let status_line = "HTTP/1.1 200 OK\r\n\r\n";
+    // let contents = fs::read_to_string("hello.html").unwrap();
+    // let length = contents.len();
+    // let response = format!("{status_line}Content-Length: {length}\n{contents}");
+    // println!("{}", response);
     
-    let response = format!("{status_line}Content-Length: {length}\n{contents}");
-    println!("{}", response);
-    
-    stream.write_all(response.as_bytes()).unwrap();
+    // stream.write_all(response.as_bytes()).unwrap();
 }
 
 /*fn handle_connection(mut stream: TcpStream) {
