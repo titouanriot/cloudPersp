@@ -63,7 +63,7 @@ async fn sending_request_with_result(result_command : Output) -> std::io::Result
     // .await;
     let client = reqwest::Client::new();
     let response = client.post("http://127.0.0.1:8082")
-    .body(String::from(result_command.stdout).trim())
+    .body(String::from_utf8(result_command.stdout).unwrap())
     .send()
     .await;
     //let response = reqwest::get("http://127.0.0.1:8082").await;

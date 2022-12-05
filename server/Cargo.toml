@@ -9,3 +9,4 @@ edition = "2021"
 reqwest = { version = "0.11", features = ["json", "cookies"] }
 tokio = { version = "1.12.0", features = ["full"] }
 http = { version = "0.2" }
+tiny_http = "0.12"

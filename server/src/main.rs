@@ -6,6 +6,7 @@ use std::{
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream, SocketAddr}
 };
+use tiny_http::{Header, Response};
   
 // https://doc.rust-lang.org/book/ch20-01-single-threaded.html
 // telnet 127.0.0.1 8080
@@ -19,25 +20,28 @@ fn handle_connection(mut stream: TcpStream) {
     let mut buf_reader = BufReader::new(&mut stream);
 
     let mut request_line = "".to_string();
-    buf_reader.read_line(&mut request_line);
+    // buf_reader.read_line(&mut request_line);
 
-    let mut header_line = "".to_string();
-    loop {
-        buf_reader.read_line(&mut header_line);
 
-        // The final line is just /r/n
-        if header_line.len() == 2 {
-            break
-        }
-        header_line = "".to_string();
-    }
+    let mut read_buf = Vec::new();
+    buf_reader.read_to_end(&mut read_buf);
+    let mut header_line = String::from_utf8(read_buf);
+    // loop {
+    //     buf_reader.read_line(&mut header_line);
+
+    //     // The final line is just /r/n
+    //     if header_line.len() == 2 {
+    //         break
+    //     }
+    //     header_line = "".to_string();
+    // }
 
     // This buffer would need to be whatever size Content-Length reports
-    let mut read_buf = [0u8; 27];
-    buf_reader.read_exact(&mut read_buf);
+    // buf_reader.read_exact(&mut read_buf);
 
-    let body = String::from_utf8(read_buf.to_vec());
-    println!("BODY: {}", body.unwrap()); 
+    // let body = String::from_utf8(read_buf.to_vec());
+    // println!("BODY: {}", body.unwrap());             TD
+    println!("{}", header_line.unwrap());
     
  //////////TEEEEEEEESSSSSSSSTTTTTTTTTTTTTT
     
@@ -113,14 +117,33 @@ fn open_connection() {
 
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8082").unwrap();
+    // let listener = TcpListener::bind("127.0.0.1:8082").unwrap();
     //println!("listening started, ready to accept");
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
+    // for stream in listener.incoming() {
+    //     let stream = stream.unwrap();
 
-        handle_connection(stream);
+    //     handle_connection(stream);
+    // }
+    let server = tiny_http::Server::http("0.0.0.0:8082").unwrap();
+
+
+    for mut request in server.incoming_requests() {
+        // println!("received request! method: {:?}, url: {:?}, headers: {:?}",
+        //     request.method(),
+        //     request.url(),
+        //     request.headers()
+        // );
+
+        let mut content = String::new();
+        request.as_reader().read_to_string(&mut content).unwrap();
+
+        println!("{}", content);
+    
+        let response = Response::from_string("Response strin blabla");
+        request.respond(response);
     }
+
 
     /*let params = [("foo", "kjj"), ("baz", "quux")];
     let resp = Client::new()
