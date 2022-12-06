@@ -2,27 +2,20 @@
 use http::Uri;
 use std::borrow::Cow;*/
 use std::{
-    fs,
+    fs::{self, OpenOptions, File},
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream, SocketAddr}
+    net::{TcpListener, TcpStream, SocketAddr}, time::SystemTime
 };
-use tiny_http::{Header, Response};
+use tiny_http::{Header, Response, Request};
+use chrono::prelude::*;
   
 // https://doc.rust-lang.org/book/ch20-01-single-threaded.html
 // telnet 127.0.0.1 8080
 
 fn handle_connection(mut stream: TcpStream) {
     println!("Incoming connection from: {:?} \n", stream.peer_addr());
-
-
-
-    //////////TEEEEEEEESSSSSSSSTTTTTTTTTTTTTT
     let mut buf_reader = BufReader::new(&mut stream);
-
     let mut request_line = "".to_string();
-    // buf_reader.read_line(&mut request_line);
-
-
     let mut read_buf = Vec::new();
     buf_reader.read_to_end(&mut read_buf);
     let mut header_line = String::from_utf8(read_buf);
@@ -115,36 +108,100 @@ fn open_connection() {
     return res;
 }*/
 
+
+fn write_incoming_ip(request : Option<&SocketAddr>){
+    let fp = "./beacon.txt";
+    let does_exist = std::path::Path::new(fp).exists();
+    if !does_exist {
+        File::create(fp).unwrap();
+    }  
+    let mut ip = String::from("Unknown IP");
+    match request{
+        Some(res) => {
+            ip = String::from(res.to_string());
+            let temp_ip = String::from(res.to_string());
+            let split = temp_ip.split(":");
+            let mut compteur = true;
+            for l in split{
+                if compteur{
+                    ip = String::from(l);
+                    compteur = false;
+                }
+            }
+            println!("{}", ip);
+        },
+        None => ()
+    }
+    let file = File::open(fp).unwrap();
+    let reader = BufReader::new(file);
+    let mut does_exist = false;
+    for line in reader.lines() {
+        match line {
+            Ok(l) => {
+                if l.contains(&ip) {
+                    does_exist = true;
+                }
+            },
+            Err(_) => {
+                println!("error reading lines in file");
+            }
+        }
+    }
+    if !does_exist{
+        println!("!does_exist");
+        let mut file_ref = OpenOptions::new().append(true).open(fp).expect("Unable to open file"); 
+        file_ref.write_all(ip.as_bytes()).expect("write failed");
+        file_ref.write_all(" - active \n".as_bytes()).expect("write failed");
+    }
+}
+
+fn write_logs(request : Option<&SocketAddr>){
+    let fp = "./logs.txt";
+    let does_exist = std::path::Path::new(fp).exists();
+    if !does_exist {
+        File::create(fp).unwrap();
+    }
+    let mut file_ref = OpenOptions::new().append(true).open(fp).expect("Unable to open file");   
+    file_ref.write_all("Incoming connection from: ".as_bytes()).expect("write failed");
+    let mut ip = String::from("Unknown IP");
+    match request{
+        Some(res) => {
+            ip = String::from(res.to_string());
+        },
+        None => ()
+    }
+    file_ref.write_all(ip.as_bytes()).expect("write failed");
+    file_ref.write_all(" at : ".as_bytes()).expect("write failed");
+    let date_as_string = Utc::now().to_string();
+    file_ref.write_all(date_as_string.as_bytes()).expect("write failed");
+    file_ref.write_all("\n".as_bytes()).expect("write failed");
+    println!("Log appended successfully"); 
+}
+
 #[tokio::main]
 async fn main() {
     // let listener = TcpListener::bind("127.0.0.1:8082").unwrap();
     //println!("listening started, ready to accept");
-
     // for stream in listener.incoming() {
     //     let stream = stream.unwrap();
-
     //     handle_connection(stream);
     // }
     let server = tiny_http::Server::http("0.0.0.0:8082").unwrap();
-
-
     for mut request in server.incoming_requests() {
+        println!("Incoming connection from: {:?} \n", request.remote_addr());
+        write_incoming_ip(request.remote_addr());
+        write_logs(request.remote_addr());
         // println!("received request! method: {:?}, url: {:?}, headers: {:?}",
         //     request.method(),
         //     request.url(),
         //     request.headers()
         // );
-
         let mut content = String::new();
         request.as_reader().read_to_string(&mut content).unwrap();
-
         println!("{}", content);
-    
         let response = Response::from_string("Response strin blabla");
-        request.respond(response);
+        request.respond(response).unwrap();
     }
-
-
     /*let params = [("foo", "kjj"), ("baz", "quux")];
     let resp = Client::new()
         .post("http://127.0.0.1:5500/test.html?foo=1&bar=2")
