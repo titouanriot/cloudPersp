@@ -868,6 +868,8 @@ dependencies = [
  "chrono",
  "http",
  "reqwest",
+ "serde",
+ "serde_json",
  "tiny_http",
  "tokio",
 ]
