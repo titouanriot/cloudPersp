@@ -119,9 +119,10 @@ fn open_connection() {
 }*/
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 enum OrdreType {
     Commande,
+    Fichier,
     Endormir,
     Autre
 }
@@ -158,6 +159,72 @@ async fn handle_post_request(server: & tiny_http::Server) -> () {
         Err(e) => { println!("error: {}", e);  }
     };
 }
+
+async fn handle_file_post_request(server: & tiny_http::Server, filename: &str) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(mut rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+                
+                let file = std::fs::File::open(filename).unwrap();
+
+                let mut response = Response::from_file(file);
+                let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"multipart/form-data"[..]).unwrap();
+                response.add_header(header);
+
+                // let mut content = String::new();
+                // rq.as_reader().read_to_string(&mut content).unwrap();
+
+                // println!("{}", content);
+            
+                // let response = Response::from_string("Recu requete POST\n");
+                rq.respond(response);
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+
+async fn send_ordre(server: & tiny_http::Server, ordre: OrdreType, arguments: Vec<String>) -> () {
+    let request = server.recv();
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Get {
+
+                let bod = Ordre { ordre: ordre.clone(), arguments: arguments.clone() };
+
+                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+                rq.respond(response);
+
+
+                match ordre {
+                    OrdreType::Commande => {
+                        handle_post_request(&server).await;
+                    },
+                    OrdreType::Fichier => {
+                        let filename = arguments[0].as_str();
+                        handle_file_post_request(&server, filename).await;
+                    },
+                    _ => ()
+                }
+
+
+            }
+
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+
+}
+
+
+
+
 
 
 #[tokio::main]
@@ -205,49 +272,11 @@ async fn main() {
 
 
     //////////////////////// Envoie une commande ls pour l'example
-    let request = server.recv();
-    match request {
-        Ok(rq) => {
-
-            if *rq.method() == tiny_http::Method::Get {
-
-
-
-                let bod = Ordre { ordre: OrdreType::Commande, arguments: vec![String::from("ls"), String::from("-l")] };
-
-
-                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
-                // let response = Response::from_string("Recu requete GET\n");
-                rq.respond(response);
-
-                handle_post_request(&server).await;
-            }
-
-        },
-        Err(e) => { println!("error: {}", e);  }
-    };
+    send_ordre(&server, OrdreType::Commande, vec![String::from("ls"), String::from("-l")]).await;
     //////////////////////// envoie un echo pour l'exemple
-    let request = server.recv();
-    match request {
-        Ok(rq) => {
-
-            if *rq.method() == tiny_http::Method::Get {
-
-
-
-                let bod = Ordre { ordre: OrdreType::Commande, arguments: vec![String::from("echo"), String::from("titouan")] };
-
-
-                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
-                // let response = Response::from_string("Recu requete GET\n");
-                rq.respond(response);
-
-                handle_post_request(&server).await;
-            }
-        },
-        Err(e) => { println!("error: {}", e);  }
-    };
-
+    send_ordre(&server, OrdreType::Commande, vec![String::from("echo"), String::from("titouan")]).await;
+    //////////////////////// envoie un fichier pour l'exemple
+    send_ordre(&server, OrdreType::Fichier, vec![String::from("texte.txt")]).await;
 
 
     // reception.join().unwrap();
