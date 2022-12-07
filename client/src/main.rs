@@ -1,6 +1,12 @@
-use std::process::Command;
+use std::{
+    io::{prelude::*, Result, Write},
+    net::{TcpStream},
+    thread,
+    time::Duration,
+    process::{Command, Output},
+    str
+};
 use reqwest;
-use std::str;
 
 //Exemple utilisation de la commande
 // let vecteur = vec!["-a".to_string(), "-l".to_string()];
@@ -46,12 +52,40 @@ async fn sending_request_with_result(mut result_command : String) -> std::io::Re
     return Ok(());
 }
 
+
+#[tokio::main]
+async fn sending_request(t: u64) -> Result<()> {
+
+    let client = reqwest::Client::new();
+    client.get("http://0.0.0.0:8082/")
+        .send()
+        .await
+        .expect("failed to get response")
+        .text()
+        .await
+        .expect("failed to get payload");
+
+    println!("{:?}", client);
+    println!("toto");
+    thread::sleep(Duration::from_millis(t));
+
+    let mut stream = TcpStream::connect("127.0.0.1:7878")?;
+    stream.write(&[1])?;
+    stream.read(&mut [0; 128])?;
+    return Ok(());
+}
+
+
 fn main() {
-    // let boucle : bool = true;
-    // while boucle {
-    //     sending_request();
-    // }
-    //sending_request();
+    let boucle : bool = true;
+    let delay_in_sec: f64 = 5.0; 
+    while boucle {
+        let result = sending_request((delay_in_sec*(1000 as f64)) as u64);
+        match result {
+            Ok(_) =>  {()},
+            _ => {println!("An error occured sending the request")}
+        }
+    }
     let vecteur = vec!["-a".to_string(), "-l".to_string()];
     let result_command = exec_commande_shell(String::from("ls"), vecteur);
     match result_command{
