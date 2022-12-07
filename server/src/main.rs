@@ -6,7 +6,10 @@ use std::{
     io::{prelude::*, BufReader},
     net::{TcpListener, TcpStream, SocketAddr}
 };
-use tiny_http::{Header, Response};
+use http::Method;
+use tiny_http::{Header, Response, Request};
+use serde::{Serialize, Deserialize};
+use std::thread;
   
 // https://doc.rust-lang.org/book/ch20-01-single-threaded.html
 // telnet 127.0.0.1 8080
@@ -115,47 +118,138 @@ fn open_connection() {
     return res;
 }*/
 
+
+#[derive(Serialize, Deserialize, Debug)]
+enum OrdreType {
+    Commande,
+    Endormir,
+    Autre
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Ordre {
+    ordre: OrdreType,
+    arguments: Vec<String>,
+}
+
+
+
+
+
+
+async fn handle_post_request(server: & tiny_http::Server) -> () {
+
+    let request = server.recv();
+
+    match request {
+        Ok(mut rq) => {
+
+            if *rq.method() == tiny_http::Method::Post {
+
+                let mut content = String::new();
+                rq.as_reader().read_to_string(&mut content).unwrap();
+
+                println!("{}", content);
+            
+                let response = Response::from_string("Recu requete POST\n");
+                rq.respond(response);
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+}
+
+
 #[tokio::main]
 async fn main() {
-    // let listener = TcpListener::bind("127.0.0.1:8082").unwrap();
-    //println!("listening started, ready to accept");
-
-    // for stream in listener.incoming() {
-    //     let stream = stream.unwrap();
-
-    //     handle_connection(stream);
-    // }
     let server = tiny_http::Server::http("0.0.0.0:8082").unwrap();
+    // let server = std::sync::Arc::new(server);
+
+    //////////////////////// gère en permanence les requetes post  (utilise le multithreading, a voir si utile eventuellement)
+    // let server_reception = server.clone();
+    // let mut reception = thread::spawn(move || {
+
+    //     for mut request in server_reception.incoming_requests() {
+    //         // println!("received request! method: {:?}, url: {:?}, headers: {:?}",
+    //         //     request.method(),
+    //         //     request.url(),
+    //         //     request.headers()
+    //         // );
+
+    //         if *request.method() == tiny_http::Method::Post {
+
+    //             let mut content = String::new();
+    //             request.as_reader().read_to_string(&mut content).unwrap();
+
+    //             println!("{}", content);
+            
+    //             let response = Response::from_string("Recu requete POST\n");
+    //             request.respond(response);
+    //         }
+    //         // else if *request.method() == tiny_http::Method::Get {
 
 
-    for mut request in server.incoming_requests() {
-        // println!("received request! method: {:?}, url: {:?}, headers: {:?}",
-        //     request.method(),
-        //     request.url(),
-        //     request.headers()
-        // );
 
-        let mut content = String::new();
-        request.as_reader().read_to_string(&mut content).unwrap();
-
-        println!("{}", content);
-    
-        let response = Response::from_string("Response strin blabla");
-        request.respond(response);
-    }
+    //         //     let bod = Ordre { ordre: OrdreType::Commande, arguments: vec![String::from("ls"), String::from("-l")] };
 
 
-    /*let params = [("foo", "kjj"), ("baz", "quux")];
-    let resp = Client::new()
-        .post("http://127.0.0.1:5500/test.html?foo=1&bar=2")
-        .form(&params)
-        .body("the exact body that is sent")
-        .send()
-        .await;
+    //         //     let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+    //         //     // let response = Response::from_string("Recu requete GET\n");
+    //         //     request.respond(response);
+    //         // }
+    //     }
+    // });
+    ////////////////////////
 
-    let request = String::from("http://127.0.0.1:5500/test.html?foo=value1&bar=value2");
 
-    let resp = get_params_by_url(request);
 
-    dbg!(resp);*/
+
+    //////////////////////// Envoie une commande ls pour l'example
+    let request = server.recv();
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Get {
+
+
+
+                let bod = Ordre { ordre: OrdreType::Commande, arguments: vec![String::from("ls"), String::from("-l")] };
+
+
+                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+                // let response = Response::from_string("Recu requete GET\n");
+                rq.respond(response);
+
+                handle_post_request(&server).await;
+            }
+
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+    //////////////////////// envoie un echo pour l'exemple
+    let request = server.recv();
+    match request {
+        Ok(rq) => {
+
+            if *rq.method() == tiny_http::Method::Get {
+
+
+
+                let bod = Ordre { ordre: OrdreType::Commande, arguments: vec![String::from("echo"), String::from("titouan")] };
+
+
+                let response = Response::from_string(serde_json::to_string(&bod).unwrap());
+                // let response = Response::from_string("Recu requete GET\n");
+                rq.respond(response);
+
+                handle_post_request(&server).await;
+            }
+        },
+        Err(e) => { println!("error: {}", e);  }
+    };
+
+
+
+    // reception.join().unwrap();
+
 }
