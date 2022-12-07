@@ -1,3 +1,5 @@
-server/target
-client/target
+server/target/
+client/target/
 client/Cargo.lock
+
+server/target/.rustc_info.json
